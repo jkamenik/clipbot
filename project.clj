@@ -7,6 +7,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :repl-options {:init-ns dev}
+  :dev { :dependencies [[org.clojure/tools.namespace "0.2.7"]]}
   :dependencies [[org.clojure/clojure "1.6.0"]
 
                  ;; TODO: move dependencies to a different
@@ -19,6 +20,7 @@
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]
                  [net.java.dev.rome/rome "1.0.0"]
+                 [com.spotify/docker-client "2.7.7"]
                  [clj-http "0.9.2"],
                  [cheshire "5.2.0"],
                  [compojure "1.1.5"]
