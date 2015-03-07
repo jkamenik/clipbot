@@ -28,7 +28,7 @@
 ;; - DOCKER_CERT_PATH=/path/to/certs/dir
 ;; - DOCKER_TLS_VERIFY=1
 
-(def docker-regex #"^@docker\s+(.*?)\s*$")
+(def docker-regex #"^/docker\s+(.*?)\s*$")
 
 (def RUN
   {:name "run"
@@ -138,7 +138,7 @@
         ;; TODO create client in init and share across messages
         client (docker-client)
         ;; TODO parameritize image and command
-        id (docker-run client "unbounce/base" ["bash" "-c" "echo Hello Docker"])]
+        id (docker-run client "unbounce/base" ["bash", "-c", "for i in {1..10}; do echo $i; sleep 1; done;"])]
     (.forEach subject (action* send-chat-message))
     (future
       (docker-attach client id subject))))
