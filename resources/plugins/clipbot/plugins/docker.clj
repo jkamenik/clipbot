@@ -54,7 +54,7 @@
   (if-not (.ready reader)
     (recur reader)))
 
-(defn- pipe-buffered-reader->subject  [reader subject]
+(defn- buffered-reader->subject  [reader subject]
   (if-let [line (.readLine reader)]
     (do
       (.onNext subject line)
@@ -63,11 +63,14 @@
       (.close reader)
       (.onCompleted subject))))
 
-(defn buffered-reader->subject [reader subject]
+(defn input-stream->subject [stream subject]
   (try
     (do
-      (wait-on-ready reader)
-      (pipe-buffered-reader->subject reader subject))
+      (let [reader (-> stream
+                       (InputStreamReader.)
+                       (BufferedReader.))]
+        (wait-on-ready reader)
+        (buffered-reader->subject reader subject)))
     (catch Exception e (.onError subject e))))
 
 (defn docker-attach [client container-id subject]
@@ -86,12 +89,9 @@
                             DockerClient$AttachParameter/STDERR
                             DockerClient$AttachParameter/STREAM]))
         (attach (PipedOutputStream. std-out)
-                (PipedOutputStream. std-err))
-        ))
-    (-> std-out
-        (InputStreamReader.)
-        (BufferedReader.)
-        (buffered-reader->subject subject))))
+                (PipedOutputStream. std-err))))
+    (future (input-stream->subject std-out subject))
+    (future (input-stream->subject std-err subject))))
 
 (defn docker-run [client image-name command]
   (try
@@ -140,8 +140,7 @@
         ;; TODO parameritize image and command
         id (docker-run client "unbounce/base" ["bash", "-c", "for i in {1..10}; do echo $i; sleep 1; done;"])]
     (.forEach subject (action* send-chat-message))
-    (future
-      (docker-attach client id subject))))
+    (docker-attach client id subject)))
 
 (defn init-docker-bot [subscribe observable]
   (let [chat-message-events (rx/filter (category-type :chat :receive-message) observable)
