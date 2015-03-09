@@ -21,8 +21,9 @@
                  [jivesoftware/smackx "3.1.0"]
                  [net.java.dev.rome/rome "1.0.0"]
                  [com.spotify/docker-client "2.7.7"]
-                 [clj-http "0.9.2"],
-                 [cheshire "5.2.0"],
+                 [org.van-clj/zetta-parser "0.0.4"]
+                 [clj-http "0.9.2"]
+                 [cheshire "5.2.0"]
                  [compojure "1.1.5"]
                  [http-kit "2.1.16"]
                  [clojail "1.0.6"]
