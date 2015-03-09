@@ -16,18 +16,31 @@
 
 (defrecord Param [key value])
 
-(def key-parser
-  (<* word
-      (char \:)))
+(def ^:private key-parser
+  (around spaces
+          (<$> str/join (many-till (not-char \space)
+                                   (char \:)))))
 
-(def value-parser
-  (<* (many (around spaces word))
-      (<|> key-parser end-of-input)))
+(def ^:private letter-or-digit
+  (satisfy? #(Character/isLetterOrDigit ^java.lang.Character %)))
 
-(def param-parser
+(def ^:private slash-or-hyphen
+  (<|> (char \/) (char \:)))
+
+;; TODO accept any non-space character
+(def ^:private value-parser
+  (<$> str/join (many (around spaces (<|> slash-or-hyphen letter-or-digit)))))
+
+(def ^:private param-parser
   (<$> #(Param. %1 %2)
        key-parser
        value-parser))
+
+(def ^:private params-parser
+  (sep-by param-parser (char \,)))
+
+(defn parse-input [input]
+  (:result (parse-once params-parser input)))
 
 (defn parse-chat-message [{:keys [payload] :as ev}]
   (let [[task-name & args] (str/split (->> payload (re-seq #".*") first second)
