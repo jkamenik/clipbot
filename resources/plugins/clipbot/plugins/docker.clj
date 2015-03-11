@@ -7,7 +7,7 @@
    [clipbot.plugin :as plugin]
    [clipbot.types :refer :all])
   (:import
-   [rx.subjects PublishSubject]
+   [rx.subjects PublishSubject SerializedSubject]
    [java.net URI]
    [java.nio.file Paths]
    [java.io
@@ -105,47 +105,35 @@
       container-id)
     (catch ImageNotFoundException e (str "Unable to find image: " image-name))))
 
-(def display-help-event
-  (chat-message
-    (str "Available commands for ~docker\n"
-         (str/join "\n"
-              (for [{:keys [name description]} docker-tasks]
-                (str name " - " description))))))
-
-(defn parse-chat-message [{:keys [payload send-chat-message] :as ev}]
-  (let [[task-name & args] (str/split (->> payload (re-seq docker-regex) first second)
-                                   #"\s+") ]
-    (merge ev
-          (cond
-             (= task-name (:name RUN))
-             {:category :docker
-              :type :run}
-
-             :else
-             display-help-event))))
-
-(defn chat-message-parser [{:keys [send-raw-message send-chat-message] :as ev*}]
-  (let [ev (parse-chat-message ev*)]
-    (send-raw-message ev)))
-
 (defn- category-type [category type]
   (fn -filter-msg [msg]
     (and (= (:category msg)) category
          (= (:type msg) type))))
 
-(defn- docker-run-handler [{:keys [send-chat-message]}]
-  (let [subject (PublishSubject/create)
+(def default-cmd ["bash", "-c", "for i in {1..10}; do echo $i; sleep 1; done;"])
+
+(defn- docker-run-handler [{:keys [send-chat-message cmd image]
+                            :or {cmd default-cmd
+                                 image "unbounce/base"}}]
+  (let [subject (SerializedSubject. (PublishSubject/create))
+        cmd* (if (string? cmd) (list cmd) cmd)
         ;; TODO create client in init and share across messages
         client (docker-client)
-        ;; TODO parameritize image and command
-        id (docker-run client "unbounce/base" ["bash", "-c", "for i in {1..10}; do echo $i; sleep 1; done;"])]
+        id (docker-run client image cmd*)]
     (.forEach subject (action* send-chat-message))
     (docker-attach client id subject)))
 
+(defn- docker-help-handler [{:keys [send-chat-message]}]
+  (send-chat-message (str "Available commands for /docker\n"
+         (str/join "\n"
+              (for [{:keys [name description]} docker-tasks]
+                (str name " - " description))))))
+
 (defn init-docker-bot [subscribe observable]
   (let [chat-message-events (rx/filter (category-type :chat :receive-message) observable)
+        help-events (rx/filter (category-type :docker :help) observable)
         run-events (rx/filter (category-type :docker :run) observable)]
-    (subscribe "chat-message-parser" chat-message-events chat-message-parser)
+    (subscribe "docker-help" help-events docker-help-handler)
     (subscribe "docker-run" run-events docker-run-handler)))
 
 (plugin/register-plugin
