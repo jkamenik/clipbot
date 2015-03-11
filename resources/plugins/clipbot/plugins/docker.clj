@@ -7,7 +7,7 @@
    [clipbot.plugin :as plugin]
    [clipbot.types :refer :all])
   (:import
-   [rx.subjects PublishSubject SerializedSubject]
+   [rx.subjects ReplaySubject SerializedSubject]
    [java.net URI]
    [java.nio.file Paths]
    [java.io
@@ -73,25 +73,29 @@
         (buffered-reader->subject reader subject)))
     (catch Exception e (.onError subject e))))
 
+(defn cleanup-futures [ & futures]
+  #(mapv future-cancel futures))
+
 (defn docker-attach [client container-id subject]
   (let [std-out (PipedInputStream.)
         std-err (PipedInputStream.)
         ;; TODO combine std-out/err
         ;; std-out-err (CompositeInputStream. std-out std-err)
         ]
-    (future
-      (.. client
-        (attachContainer container-id
-                         (into-array
-                           DockerClient$AttachParameter
-                           [DockerClient$AttachParameter/LOGS
-                            DockerClient$AttachParameter/STDOUT
-                            DockerClient$AttachParameter/STDERR
-                            DockerClient$AttachParameter/STREAM]))
-        (attach (PipedOutputStream. std-out)
-                (PipedOutputStream. std-err))))
-    (future (input-stream->subject std-out subject))
-    (future (input-stream->subject std-err subject))))
+    (cleanup-futures
+     (future
+        (.. client
+          (attachContainer container-id
+                           (into-array
+                             DockerClient$AttachParameter
+                             [DockerClient$AttachParameter/LOGS
+                              DockerClient$AttachParameter/STDOUT
+                              DockerClient$AttachParameter/STDERR
+                              DockerClient$AttachParameter/STREAM]))
+          (attach (PipedOutputStream. std-out)
+                  (PipedOutputStream. std-err))))
+      (future (input-stream->subject std-out subject))
+      (future (input-stream->subject std-err subject)))))
 
 (defn docker-run [client image-name command]
   (try
@@ -115,13 +119,20 @@
 (defn- docker-run-handler [{:keys [send-chat-message cmd image]
                             :or {cmd default-cmd
                                  image "unbounce/base"}}]
-  (let [subject (SerializedSubject. (PublishSubject/create))
+  (let [subject (SerializedSubject. (ReplaySubject/create))
         cmd* (if (string? cmd) (list cmd) cmd)
         ;; TODO create client in init and share across messages
         client (docker-client)
-        id (docker-run client image cmd*)]
-    (.forEach subject (action* send-chat-message))
-    (docker-attach client id subject)))
+        id (docker-run client image cmd*)
+        cleanup-attach (docker-attach client id subject)]
+    (.subscribe subject
+                (action* #(send-chat-message %))
+                (action* (fn [err]
+                           (send-chat-message (str "Something went wrong: " err))
+                           (cleanup-attach)))
+                (action* (fn []
+                           (send-chat-message "Done")
+                           (cleanup-attach))))))
 
 (defn- docker-help-handler [{:keys [send-chat-message]}]
   (send-chat-message (str "Available commands for /docker\n"
