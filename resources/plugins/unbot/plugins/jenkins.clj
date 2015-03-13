@@ -1,4 +1,4 @@
-(ns clipbot.plugins.jenkins
+(ns unbot.plugins.jenkins
   (:require
    [clojure.string :as str]
    [rx.lang.clojure.core :as rx]
@@ -6,8 +6,8 @@
    [clj-http.client :as http]
    [clj-jenkins.job :as jenkins]
 
-   [clipbot.plugin :as plugin]
-   [clipbot.types :refer :all]))
+   [unbot.plugin :as plugin]
+   [unbot.types :refer :all]))
 
 ;; credentials come from env vars
 ;; - JENKINS_URL
