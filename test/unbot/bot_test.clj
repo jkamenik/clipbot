@@ -1,10 +1,14 @@
 (ns unbot.bot-test
   (:require [unbot.bot :refer :all]
-            [unbot.types :refer [chat-message]]
             [clojure.test :refer :all]
             [disposables.core :refer [to-disposable dispose]])
   (:import
    [rx.subjects PublishSubject]))
+
+(defn chat-message [payload]
+  {:category :chat
+   :type :receive-message
+   :payload payload})
 
 (defn test-plugin-setup [{:keys [plugin-regex event-bus register-plugin?]}]
   (let [st-atom (atom [])
@@ -22,7 +26,8 @@
                              :regex plugin-regex
                              :init
                              (fn test-plugin-init [subscribe observable]
-                               (subscribe observable
+                               (subscribe "message accumulator"
+                                          observable
                                           #(swap! st-atom conj %)
                                           #(.printStackTrace %)))
                              }})]
