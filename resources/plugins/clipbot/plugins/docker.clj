@@ -3,6 +3,7 @@
    [clojure.string :as str]
    [rx.lang.clojure.core :as rx]
    [rx.lang.clojure.interop :refer [action*]]
+   [com.unbounce.treajure.io :as tio]
    [clojure.java.io :as io]
    [clipbot.plugin :as plugin]
    [clipbot.types :refer :all])
@@ -49,53 +50,27 @@
    (connectionPoolSize 10)
    (build)))
 
-(defn- wait-on-ready [reader]
-  ;; TODO add timeout
-  (if-not (.ready reader)
-    (recur reader)))
-
-(defn- buffered-reader->subject  [reader subject]
-  (if-let [line (.readLine reader)]
-    (do
-      (.onNext subject line)
-      (recur reader subject))
-    (do
-      (.close reader)
-      (.onCompleted subject))))
-
-(defn input-stream->subject [stream subject]
-  (try
-    (do
-      (let [reader (-> stream
-                       (InputStreamReader.)
-                       (BufferedReader.))]
-        (wait-on-ready reader)
-        (buffered-reader->subject reader subject)))
-    (catch Exception e (.onError subject e))))
-
-(defn cleanup-futures [ & futures]
-  #(mapv future-cancel futures))
-
 (defn docker-attach [client container-id subject]
-  (let [std-out (PipedInputStream.)
-        std-err (PipedInputStream.)
-        ;; TODO combine std-out/err
-        ;; std-out-err (CompositeInputStream. std-out std-err)
-        ]
-    (cleanup-futures
-     (future
+  (try
+    (let [on-next #(.onNext subject (String. %))
+          std-err (tio/split-emit-output-stream \newline on-next)
+          ;; Use std-out's close event to flush std-err before calling
+          ;; complete on the subject.
+          on-completed (fn []
+                         (.close std-err)
+                         (.onCompleted subject))
+          std-out (tio/split-emit-output-stream \newline on-next on-completed)
+          ]
+      (future
         (.. client
-          (attachContainer container-id
-                           (into-array
-                             DockerClient$AttachParameter
-                             [DockerClient$AttachParameter/LOGS
-                              DockerClient$AttachParameter/STDOUT
-                              DockerClient$AttachParameter/STDERR
-                              DockerClient$AttachParameter/STREAM]))
-          (attach (PipedOutputStream. std-out)
-                  (PipedOutputStream. std-err))))
-      (future (input-stream->subject std-out subject))
-      (future (input-stream->subject std-err subject)))))
+            (attachContainer container-id
+                             (into-array
+                              [DockerClient$AttachParameter/LOGS
+                               DockerClient$AttachParameter/STDOUT
+                               DockerClient$AttachParameter/STDERR
+                               DockerClient$AttachParameter/STREAM]))
+            (attach std-out std-err))))
+    (catch Exception e (.onError subject e))))
 
 (defn docker-run [client image-name command]
   (try
@@ -123,16 +98,15 @@
         cmd* (if (string? cmd) (list cmd) cmd)
         ;; TODO create client in init and share across messages
         client (docker-client)
-        id (docker-run client image cmd*)
-        cleanup-attach (docker-attach client id subject)]
+        id (docker-run client image cmd*)]
     (.subscribe subject
                 (action* #(send-chat-message %))
                 (action* (fn [err]
-                           (send-chat-message (str "Something went wrong: " err))
-                           (cleanup-attach)))
+                           (send-chat-message (str "Something went wrong: " err))))
                 (action* (fn []
-                           (send-chat-message "Done")
-                           (cleanup-attach))))))
+                           ;; TODO get result of attach future and report exit status
+                           (send-chat-message "Done"))))
+    (docker-attach client id subject)))
 
 (defn- docker-help-handler [{:keys [send-chat-message]}]
   (send-chat-message (str "Available commands for /docker\n"
