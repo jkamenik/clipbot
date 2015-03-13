@@ -1,4 +1,4 @@
-(ns clipbot.types
+(ns unbot.types
   (:require [disposables.core :refer [new-disposable* IToDisposable]])
   (:import
    [disposables.core Disposable]
@@ -14,19 +14,6 @@
     (new-disposable* "rx.subscription" #(.unsubscribe self))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Bot
-
-;; (defrecord Bot [id plugins ^Disposable disposable ^Subject subject]
-;;   IToDisposable
-;;   (to-disposable [_] disposable))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chat record and protocols
-
-;; (defrecord HipChat-Connection [^Disposable disposable channels username]
-;;   (IToDisposable [_] disposable))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Util general functions
 
 (defn category-type? [category type]
@@ -39,7 +26,7 @@
    :type :send-message
    :payload payload})
 
-;; Check if an outbound clipbot message has valid format
+;; Check if an outbound unbot message has valid format
 (defn valid-raw-message? [msg]
   (and
    (:category msg)

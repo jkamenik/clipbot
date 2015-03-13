@@ -1,8 +1,8 @@
-(ns clipbot.bot
+(ns unbot.bot
   (:require
    [disposables.core :refer [merge-disposable new-disposable*]]
    [rx.lang.clojure.core :as rx]
-   [clipbot.types :refer :all])
+   [unbot.types :refer :all])
   (:import
    [rx.subscriptions CompositeSubscription]))
 

@@ -1,6 +1,6 @@
-(ns clipbot.bot-test
-  (:require [clipbot.bot :refer :all]
-            [clipbot.types :refer [chat-message]]
+(ns unbot.bot-test
+  (:require [unbot.bot :refer :all]
+            [unbot.types :refer [chat-message]]
             [clojure.test :refer :all]
             [disposables.core :refer [to-disposable dispose]])
   (:import

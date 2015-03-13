@@ -1,11 +1,11 @@
-(ns clipbot.plugin
+(ns unbot.plugin
   (:gen-class)
   (:require [clojure.java.io :as io]))
 
 (defonce plugins (atom {}))
 
 (defn read-plugin-files []
-  (map slurp (->> "plugins/clipbot/plugins" io/resource io/file file-seq (filter #(not (.isDirectory %))))))
+  (map slurp (->> "plugins/unbot/plugins" io/resource io/file file-seq (filter #(not (.isDirectory %))))))
 
 (defn load-plugins []
   (doseq [plugin (read-plugin-files)]

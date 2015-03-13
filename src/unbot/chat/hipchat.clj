@@ -1,9 +1,9 @@
-(ns clipbot.chat.hipchat
+(ns unbot.chat.hipchat
   (:require
    [clojure.string :as str]
    [rx.lang.clojure.core :as rx]
    [disposables.core :refer [new-disposable* merge-disposable to-disposable]]
-   [clipbot.types :refer :all])
+   [unbot.types :refer :all])
   (:import
    [org.jivesoftware.smack ConnectionConfiguration XMPPConnection XMPPException PacketListener]
    [org.jivesoftware.smack.packet Message Presence Presence$Type]

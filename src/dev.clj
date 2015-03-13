@@ -1,5 +1,5 @@
 (ns dev
-  (:require [clipbot.core :as clipbot]
+  (:require [unbot.core :as unbot]
             [disposables.core :refer [verbose-dispose]]
             [clojure.tools.namespace.repl :as tns]))
 
@@ -11,7 +11,7 @@
 
 (defn start-app []
   (if-not @app
-    (reset! app (clipbot/start))
+    (reset! app (unbot/start))
     (println "App already started, use reload-app instead")))
 
 (defn reload-app []

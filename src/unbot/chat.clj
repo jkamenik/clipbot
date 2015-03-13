@@ -1,12 +1,12 @@
-(ns clipbot.chat
+(ns unbot.chat
   (:require
    [clojure.string :as str]
    [disposables.core :refer [merge-disposable]]
    [rx.lang.clojure.core :as rx]
    [rx.lang.clojure.interop :refer [action*]]
    [disposables.core :refer [IDisposable]]
-   [clipbot.bot :as bot]
-   [clipbot.chat.hipchat :refer [connect-hipchat]])
+   [unbot.bot :as bot]
+   [unbot.chat.hipchat :refer [connect-hipchat]])
   (:import
    [rx Subscription]
    [rx.subscriptions Subscriptions CompositeSubscription]))

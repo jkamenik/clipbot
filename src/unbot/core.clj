@@ -1,9 +1,9 @@
-(ns clipbot.core
+(ns unbot.core
   (:gen-class)
   (:require
-   [clipbot.chat :as chat]
-   [clipbot.bot :as bot]
-   [clipbot.plugin :as plugin]
+   [unbot.chat :as chat]
+   [unbot.bot :as bot]
+   [unbot.plugin :as plugin]
    [clojure.java.io :as io]
    [cheshire.core :as json])
   (:import [rx.subjects PublishSubject]))
