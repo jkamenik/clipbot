@@ -12,7 +12,7 @@
                  ;; unbounce dependencies
                  [org.clojure/core.match "0.2.1"]
                  [io.reactivex/rxclojure "1.0.0"]
-                 [org.van-clj/disposables "0.1.0"]
+                 [org.van-clj/disposables "0.2.0"]
 
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]

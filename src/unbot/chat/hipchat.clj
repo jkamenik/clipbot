@@ -2,7 +2,7 @@
   (:require
    [clojure.string :as str]
    [rx.lang.clojure.core :as rx]
-   [disposables.core :refer [new-disposable* merge-disposable to-disposable]]
+   [disposables.core :refer [new-disposable* merge-disposables to-disposable]]
    [unbot.types :refer :all])
   (:import
    [org.jivesoftware.smack ConnectionConfiguration XMPPConnection XMPPException PacketListener]
@@ -62,8 +62,8 @@
     (println "Joining room: " room-id " with nick: " nick)
     (.join muc nick)
 
-    (merge-disposable (setup-listen-messages muc subject room-id)
-                      (setup-send-messages muc subject))))
+    (merge-disposables [(setup-listen-messages muc subject room-id)
+                        (setup-send-messages muc subject)])))
 
 ;; Setups the initial Connection to the HipChat XMPP Server
 (defn- initialize-xmpp-connection [conn user pass]
@@ -78,6 +78,6 @@
 (defn connect-hipchat [{:keys [user pass rooms]} subject]
   (let [conn (XMPPConnection. (ConnectionConfiguration. "chat.hipchat.com" 5222))]
     (initialize-xmpp-connection conn user pass)
-    (merge-disposable
-     (new-disposable* "HipChat Connection" #(.disconnect conn))
-     (apply merge-disposable (mapv #(join-hipchat-room conn % subject) rooms)))))
+    (merge-disposables
+     [(new-disposable* "HipChat Connection" #(.disconnect conn))
+      (merge-disposables (mapv #(join-hipchat-room conn % subject) rooms))])))
