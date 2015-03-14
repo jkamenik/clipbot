@@ -23,6 +23,7 @@
                  [com.spotify/docker-client "2.7.7"]
                  [org.van-clj/zetta-parser "0.0.4"]
                  [com.unbounce/treajure "1.0.0"]
+                 [com.taoensso/carmine "2.9.0"]
                  [clj-http "0.9.2"]
                  [cheshire "5.2.0"]
                  [compojure "1.1.5"]

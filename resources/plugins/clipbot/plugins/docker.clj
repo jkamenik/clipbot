@@ -6,6 +6,7 @@
    [com.unbounce.treajure.io :as tio]
    [clojure.java.io :as io]
    [clipbot.plugin :as plugin]
+   [clipbot.db :as db]
    [clipbot.types :refer :all])
   (:import
    [rx.subjects ReplaySubject SerializedSubject]
@@ -59,8 +60,7 @@
           on-completed (fn []
                          (.close std-err)
                          (.onCompleted subject))
-          std-out (tio/split-emit-output-stream \newline on-next on-completed)
-          ]
+          std-out (tio/split-emit-output-stream \newline on-next on-completed)]
       (future
         (.. client
             (attachContainer container-id
@@ -91,22 +91,34 @@
 
 (def default-cmd ["bash", "-c", "for i in {1..10}; do echo $i; sleep 1; done;"])
 
-(defn- docker-run-handler [{:keys [send-chat-message cmd image]
+(defn- persist-output [subject container-id]
+  (.subscribe subject
+              (action* #(db/append :docker container-id %))))
+
+(defn- stream-output-to-chat [subject send-chat-message]
+  (.subscribe subject
+              (action* #(send-chat-message %))
+              (action* (fn [err]
+                         (send-chat-message (str "Something went wrong: " err))))
+              (action* (fn []
+                         (send-chat-message "Done")))))
+
+(defn- docker-run-handler [{:keys [send-chat-message cmd image quiet]
                             :or {cmd default-cmd
                                  image "unbounce/base"}}]
   (let [subject (SerializedSubject. (ReplaySubject/create))
         cmd* (if (string? cmd) (list cmd) cmd)
         ;; TODO create client in init and share across messages
         client (docker-client)
-        id (docker-run client image cmd*)]
-    (.subscribe subject
-                (action* #(send-chat-message %))
-                (action* (fn [err]
-                           (send-chat-message (str "Something went wrong: " err))))
-                (action* (fn []
-                           ;; TODO get result of attach future and report exit status
-                           (send-chat-message "Done"))))
-    (docker-attach client id subject)))
+        container-id (docker-run client image cmd*)
+        short-container-id (subs container-id 0 10)]
+    (send-chat-message (format "Starting docker run %s in %s [%s]"
+                               cmd
+                               image
+                               short-container-id))
+    (persist-output subject short-container-id)
+    (if-not quiet (stream-output-to-chat subject send-chat-message))
+    (docker-attach client container-id subject)))
 
 (defn- docker-help-handler [{:keys [send-chat-message]}]
   (send-chat-message (str "Available commands for /docker\n"
