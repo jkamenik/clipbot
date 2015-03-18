@@ -1,21 +1,15 @@
 (ns plugins.unbot.plugins.docker
   (:require
+   [monads.core :refer [Monad] :as monad]
    [clojure.string :as str]
+   [disposables.core :as disposable]
    [rx.lang.clojure.core :as rx]
-   [rx.lang.clojure.interop :refer [action*]]
    [com.unbounce.treajure.io :as tio]
-   [clojure.java.io :as io]
-   [clipbot.plugin :as plugin]
-   [clipbot.types :refer :all])
+   [unbot.plugin :as plugin]
+   [unbot.types :refer :all])
   (:import
-   [rx.subjects ReplaySubject SerializedSubject]
-   [java.net URI]
-   [java.nio.file Paths]
-   [java.io
-    BufferedReader
-    InputStreamReader
-    PipedInputStream
-    PipedOutputStream]
+   [rx Subscription]
+   [rx Observable]
    [com.spotify.docker.client.messages ContainerConfig]
    [com.spotify.docker.client
     DockerClient
@@ -29,60 +23,101 @@
 ;; - DOCKER_CERT_PATH=/path/to/certs/dir
 ;; - DOCKER_TLS_VERIFY=1
 
-(def docker-regex #"^/docker\s+(.*?)\s*$")
+(def ^:private docker-regex #"^/docker\s+(.*?)\s*$")
 
-(def RUN
-  {:name "run"
-   :args "args parser here"
-   :description "Run a docker container"})
+(def ^:private docker-tasks
+  [{:name "help"
+    :args "args parser here"
+    :description "Show this help"}
+   {:name "run"
+    :args "args parser here"
+    :description "Run a docker container"}])
 
-(def HELP
-  {:name "help"
-   :args "args parser here"
-   :description "Show this help"})
+(defrecord RxDisposable [inner-disposable]
+  disposable/IDisposable
+  (verbose-dispose [_] (disposable/verbose-dispose inner-disposable))
 
-(def docker-tasks
-  [HELP RUN])
+  disposable/IToDisposable
+  (to-disposable [_] inner-disposable)
 
-(defn docker-client []
+  Subscription
+  (unsubscribe [_] (disposable/dispose inner-disposable))
+  (isUnsubscribed [_] false))
+
+(defn- new-disposable* [desc f]
+  (RxDisposable. (disposable/new-disposable* desc f)))
+
+(defn- observable-m [v]
+  (Observable/just v))
+
+(extend-protocol Monad
+  Observable
+  (do-result [_ v] (observable-m v))
+  (bind [mv f]
+    (rx/flatmap f mv)))
+
+(defn create-docker-client []
   (..
    (DefaultDockerClient/fromEnv)
    (connectionPoolSize 10)
    (build)))
 
-(defn docker-attach [client container-id subject]
-  (try
-    (let [on-next #(.onNext subject (String. %))
-          std-err (tio/split-emit-output-stream \newline on-next)
-          ;; Use std-out's close event to flush std-err before calling
-          ;; complete on the subject.
-          on-completed (fn []
-                         (.close std-err)
-                         (.onCompleted subject))
-          std-out (tio/split-emit-output-stream \newline on-next on-completed)
-          ]
-      (future
-        (.. client
-            (attachContainer container-id
-                             (into-array
-                              [DockerClient$AttachParameter/LOGS
-                               DockerClient$AttachParameter/STDOUT
-                               DockerClient$AttachParameter/STDERR
-                               DockerClient$AttachParameter/STREAM]))
-            (attach std-out std-err))))
-    (catch Exception e (.onError subject e))))
+(defn- short-container-id [container-id]
+  (subs container-id 0 10))
 
-(defn docker-run [client image-name command]
-  (try
-    (let [config (.. (ContainerConfig/builder)
+(defn container-output [client container-id]
+  (rx/generator*
+   (fn -container-output [observer]
+     (let [sad-attach-disposable (disposable/new-single-assignment-disposable)
+
+          on-next          #(when-not (rx/unsubscribed? observer)
+                              (rx/on-next observer (String. %)))
+          on-completed     #(do (rx/on-completed observer)
+                                (disposable/dispose sad-attach-disposable))
+
+          std-out (tio/split-emit-output-stream \newline on-next on-completed)
+          std-err (tio/split-emit-output-stream \newline on-next)
+
+          attach-disposable
+          (new-disposable* (str "docker attach (container id: " container-id ")")
+                           (fn attach-disposable []
+                             (println "Closing stdout/stderr from docker container"
+                                      (short-container-id container-id))
+                             (.close std-out)
+                             (.close std-err)))]
+       (disposable/set-disposable sad-attach-disposable
+                                  (disposable/to-disposable attach-disposable))
+       (.add observer attach-disposable)
+       (.. client
+           (attachContainer container-id
+                            (into-array
+                             [DockerClient$AttachParameter/LOGS
+                              DockerClient$AttachParameter/STDOUT
+                              DockerClient$AttachParameter/STDERR
+                              DockerClient$AttachParameter/STREAM]))
+           (attach std-out std-err))))))
+
+(defn start-container [client image-name command]
+  (rx/generator*
+   (fn -start-container [observer]
+     (let [config (.. (ContainerConfig/builder)
                      (image image-name)
                      (cmd (into-array command))
                      (build))
-          container (.createContainer client config)
-          container-id (.id container)]
+           container (.createContainer client config)
+           container-id (.id container)]
+      (.add observer
+            (new-disposable* (str "Docker container: " container-id)
+                             #(do
+                                (println "Killing docker container"
+                                         (short-container-id container-id))
+                                (.killContainer container))))
+
       (.startContainer client container-id)
-      container-id)
-    (catch ImageNotFoundException e (str "Unable to find image: " image-name))))
+
+      (when-not (rx/unsubscribed? observer)
+         (rx/on-next observer container-id))))))
+
 
 (defn- category-type [category type]
   (fn -filter-msg [msg]
@@ -91,22 +126,24 @@
 
 (def default-cmd ["bash", "-c", "for i in {1..10}; do echo $i; sleep 1; done;"])
 
+(defn start-container-output [client image-name cmd]
+  (monad/do observable-m
+            [container-id (start-container client image-name cmd)
+             output       (container-output client container-id)]
+            output))
+
 (defn- docker-run-handler [{:keys [send-chat-message cmd image]
                             :or {cmd default-cmd
                                  image "unbounce/base"}}]
-  (let [subject (SerializedSubject. (ReplaySubject/create))
-        cmd* (if (string? cmd) (list cmd) cmd)
+  (let [cmd* (if (string? cmd) (list cmd) cmd)
         ;; TODO create client in init and share across messages
-        client (docker-client)
-        id (docker-run client image cmd*)]
-    (.subscribe subject
-                (action* #(send-chat-message %))
-                (action* (fn [err]
-                           (send-chat-message (str "Something went wrong: " err))))
-                (action* (fn []
-                           ;; TODO get result of attach future and report exit status
-                           (send-chat-message "Done"))))
-    (docker-attach client id subject)))
+        client (create-docker-client)
+        container-observable (start-container-output client image cmd*)]
+    (rx/subscribe container-observable
+                  send-chat-message
+                  #(send-chat-message (str "ERROR: " %))
+                  ;; TODO get result of attach and report exit status
+                  #(send-chat-message "DONE"))))
 
 (defn- docker-help-handler [{:keys [send-chat-message]}]
   (send-chat-message (str "Available commands for /docker\n"
