@@ -8,6 +8,8 @@
    [unbot.plugin :as plugin]
    [unbot.types :refer :all])
   (:import
+   [java.util.concurrent Executors]
+   [rx.schedulers Schedulers]
    [rx Subscription]
    [rx Observable]
    [com.spotify.docker.client.messages ContainerConfig]
@@ -138,12 +140,23 @@
   (let [cmd* (if (string? cmd) (list cmd) cmd)
         ;; TODO create client in init and share across messages
         client (create-docker-client)
-        container-observable (start-container-output client image cmd*)]
+        scheduler (Schedulers/from (Executors/newFixedThreadPool 3))
+        container-observable (->
+                              (start-container-output client image cmd*)
+                              (.share)
+                              (.subscribeOn scheduler))]
     (rx/subscribe container-observable
                   send-chat-message
                   #(send-chat-message (str "ERROR: " %))
                   ;; TODO get result of attach and report exit status
-                  #(send-chat-message "DONE"))))
+                  #(send-chat-message "DONE"))
+    (rx/subscribe container-observable
+                  send-chat-message
+                  #(send-chat-message (str "ERROR: " %))
+                  ;; TODO get result of attach and report exit status
+                  #(send-chat-message "DONE"))
+
+    ))
 
 (defn- docker-help-handler [{:keys [send-chat-message]}]
   (send-chat-message (str "Available commands for /docker\n"
