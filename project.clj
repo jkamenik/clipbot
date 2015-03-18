@@ -14,6 +14,8 @@
                  [io.reactivex/rxclojure "1.0.0"]
                  [net.clojure/monads "1.0.0"]
                  [org.van-clj/disposables "0.2.0"]
+                 [com.unbounce/treajure "1.0.0"]
+                 [com.spotify/docker-client "2.7.7"]
 
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]
