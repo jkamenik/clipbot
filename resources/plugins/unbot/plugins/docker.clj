@@ -143,20 +143,14 @@
         scheduler (Schedulers/from (Executors/newFixedThreadPool 3))
         container-observable (->
                               (start-container-output client image cmd*)
-                              (.share)
-                              (.subscribeOn scheduler))]
+                              (.subscribeOn scheduler)
+                              (.publish))]
     (rx/subscribe container-observable
                   send-chat-message
                   #(send-chat-message (str "ERROR: " %))
                   ;; TODO get result of attach and report exit status
                   #(send-chat-message "DONE"))
-    (rx/subscribe container-observable
-                  send-chat-message
-                  #(send-chat-message (str "ERROR: " %))
-                  ;; TODO get result of attach and report exit status
-                  #(send-chat-message "DONE"))
-
-    ))
+    (.connect container-observable)))
 
 (defn- docker-help-handler [{:keys [send-chat-message]}]
   (send-chat-message (str "Available commands for /docker\n"
