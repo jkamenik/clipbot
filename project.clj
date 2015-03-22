@@ -6,14 +6,26 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :repl-options {:init-ns dev}
+  :plugins [[ragtime/ragtime.lein "0.3.8"]]
+  :ragtime {:migrations ragtime.sql.files/migrations
+            :database "jdbc:h2:file:/tmp/retrocron"}
   :dependencies [[org.clojure/clojure "1.6.0"]
 
                  ;; TODO: move dependencies to a different
                  ;; unbounce dependencies
-                 [org.clojure/core.match "0.2.2"]
+                 [bwo/monads "0.2.2"]
+                 [com.unbounce/treajure "1.0.0"]
+                 [com.spotify/docker-client "2.7.7"]
                  [io.reactivex/rxclojure "1.0.0"]
-                 [net.clojure/monads "1.0.0"]
+                 [org.clojure/core.match "0.2.2"]
                  [org.van-clj/disposables "0.2.0"]
+                 [org.van-clj/zetta-parser "0.1.0-SNAPSHOT"]
+
+                 ;; retro plugin
+                 [korma "0.4.0"]
+                 [com.h2database/h2 "1.3.170"]
+                 [clj-liquibase "0.5.2"]
+                 [ragtime "0.3.8"]
 
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]
