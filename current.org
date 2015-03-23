@@ -1,0 +1,62 @@
+* DONE Understand clipbot code and refactor appropriately
+:LOGBOOK:
+- State "DONE"       from ""           [2015-03-03 Tue 16:25]
+:END:
+:PROPERTIES:
+:ID:       ddb91e69-bc95-4aa7-975a-3b6037ce3fa6
+:ADDED:    [2015-03-03 Tue 11:32]
+:END:
+
+** DONE Bot namespace
+:CLOCK:
+CLOCK: [2015-03-03 Tue 13:20]--[2015-03-03 Tue 13:56] =>  0:36
+CLOCK: [2015-03-03 Tue 11:59]--[2015-03-03 Tue 12:40] =>  0:41
+CLOCK: [2015-03-03 Tue 11:55]--[2015-03-03 Tue 11:59] =>  0:04
+CLOCK: [2015-03-03 Tue 11:33]--[2015-03-03 Tue 11:53] =>  0:20
+:END:
+:LOGBOOK:
+- State "DONE"       from "STARTED"    [2015-03-03 Tue 13:56]
+- State "STARTED"    from ""           [2015-03-03 Tue 11:33]
+:END:
+:PROPERTIES:
+:ID:       b7b761f5-e12a-415d-a90b-6fcfc772aa6e
+:ADDED:    [2015-03-03 Tue 11:32]
+:Effort:   1:00
+:END:
+ - [X] Move Bot record type to types ns
+ - [X] Remove connection from Bot record (not being used)
+ - [X] Remove handler implementation
+ - [X] Test that subscriptions are working correctly
+
+** DONE Chat namespace
+:CLOCK:
+CLOCK: [2015-03-03 Tue 13:56]--[2015-03-03 Tue 16:25] =>  2:29
+:END:
+:LOGBOOK:
+- State "DONE"       from "STARTED"    [2015-03-03 Tue 16:25]
+- State "STARTED"    from ""           [2015-03-03 Tue 13:56]
+:END:
+:PROPERTIES:
+:ID:       56dfc6d2-54ec-4aff-a81b-18d3b4e0e325
+:ADDED:    [2015-03-03 Tue 13:56]
+:Effort:   1:00
+:END:
+ - [X] Move records to types ns
+ - [X] Move HipChat logic to its own module
+
+* Retro Plugin
+:PROPERTIES:
+:ID:       f13a7648-b883-4ab5-86b7-ffd10fe16626
+:ADDED:    [2015-03-23 Mon 15:49]
+:END:
+
+- [ ] Integrate with JIRA to get sprint info
+
+  - API Call to get team views:
+    https://jira.unbounce.com/rest/greenhopper/1.0/rapidview
+
+  - API Call to get sprints from a team view
+    https://jira.unbounce.com/rest/greenhopper/1.0/sprintquery/<rapid_view_id>
+
+  - API Call to get sprint info
+    https://jira.unbounce.com/rest/greenhopper/1.0/rapid/charts/scopechangeburndownchart.json?rapidViewId=<rapid_view_id>&sprintId=<sprint_id>
