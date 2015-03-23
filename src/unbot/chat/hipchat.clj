@@ -5,8 +5,15 @@
    [disposables.core :refer [new-disposable* merge-disposables to-disposable]]
    [unbot.types :refer :all])
   (:import
-   [org.jivesoftware.smack ConnectionConfiguration XMPPConnection XMPPException PacketListener]
-   [org.jivesoftware.smack.packet Message Presence Presence$Type]
+   [org.jivesoftware.smack
+    ConnectionConfiguration
+    XMPPConnection
+    XMPPException
+    PacketListener]
+   [org.jivesoftware.smack.packet
+    Message
+    Presence
+    Presence$Type]
    [org.jivesoftware.smackx.muc MultiUserChat]))
 
 ;; Transform an XMPP Message to a Clojure Map
