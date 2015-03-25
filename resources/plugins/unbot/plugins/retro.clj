@@ -13,9 +13,7 @@
    [rx.lang.clojure.core :as rx]
 
    ;; parser combinating!
-   [zetta.core :refer [always fail-parser done?
-                       do-parser failure? parse-once
-                       <$> *>]]
+   [zetta.core :as zetta :refer [<$> *>]]
    [zetta.combinators :as pc]
    [zetta.parser.seq :as p]
    [zetta.parser.string :as ps]
@@ -31,23 +29,27 @@
 (def RETRO_ENTRY_TYPES
   #{:flowers :delta :plus :idea})
 
-(defrecord RetroEntry   [room user created-at entry-type msg])
-(defrecord SetBeginDate [room user created-at begin-date])
-(defrecord PrintRetroReport [room send-chat-msg])
+(defrecord RetroEntry       [room author created-at entry-type msg])
+(defrecord StartSprint      [room author created-at])
+(defrecord PrintRetroReport [room send-chat-message])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PARSERS
 
 (def retro-entry-type-parser
-  (do-parser
+  (zetta/do-parser
    entry-type <- p/word
    let entry-type-kw = (keyword entry-type)
    (if (RETRO_ENTRY_TYPES entry-type-kw)
-     (always entry-type-kw)
-     (fail-parser (str "Retro entry " entry-type " not recognized")))))
+     (zetta/always entry-type-kw)
+     (zetta/fail-parser (str "Retro entry " entry-type " not recognized")))))
 
-(defn retro-entry-parser [{:keys [room-id user timestamp]}]
-  (<$> #(RetroEntry. room-id user timestamp %1 %2)
+(defn retro-entry-cmd-parser [{:keys [room-id user timestamp]}]
+  (<$> #(map->RetroEntry {:room room-id
+                          :author user
+                          :created-at (java.util.Date. timestamp)
+                          :entry-type %1
+                          :msg %2 })
        (*> p/skip-spaces (p/string "#retro")
            p/skip-spaces (p/char \#)
            p/skip-spaces retro-entry-type-parser)
@@ -55,34 +57,33 @@
 
 ;;;;;;;;;;;;;;;;;;;;
 
-(def date-parser
-  (do-parser
-   text <- (ps/take-till #(Character/isWhitespace #^java.lang.Character %))
-   (if-let [parsed-date (.parse (SimpleDateFormat. "yyyy/MM/DD")
-                                text (ParsePosition. 0))]
-     (always parsed-date)
-     (fail-parser "Expected date"))))
+;; (def date-parser
+;;   (zetta/do-parser
+;;    text <- (ps/take-till #(Character/isWhitespace #^java.lang.Character %))
+;;    (if-let [parsed-date (.parse (SimpleDateFormat. "yyyy/MM/DD")
+;;                                 text (ParsePosition. 0))]
+;;      (zetta/always parsed-date)
+;;      (zetta/fail-parser "Expected date"))))
 
-(defn set-begin-date-parser [{:keys [room-id user timestamp]}]
-  (<$> #(SetBeginDate. room-id user timestamp %)
+(defn start-sprint-cmd-parser [{:keys [room-id author timestamp]}]
+  (<$> #(StartSprint. room-id author (java.util.Date. timestamp))
        (*> p/skip-spaces (p/string "#retro")
-           p/skip-spaces (p/string "set-begin-date")
-           p/skip-spaces date-parser)))
+           p/skip-spaces (p/string "start-sprint"))))
 
 
 ;;;;;;;;;;;;;;;;;;;;
 
-(defn print-retro-report-parser [{:keys [room-id send-chat-message]}]
-  (do-parser
+(defn print-retro-report-cmd-parser [{:keys [room-id send-chat-message]}]
+  (zetta/do-parser
    _ <- (*> p/skip-spaces (p/string "#retro")
             p/skip-spaces (p/string "print-report"))
-   (always (PrintRetroReport. room-id send-chat-message))))
+   (zetta/always (PrintRetroReport. room-id send-chat-message))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; STATE REDUCERS
 
-(defn retro-report-reducer [report retro-entry]
+(defn sprint-report-reducer [report retro-entry]
   (-> report
       (update-in
        [(:room retro-entry)
@@ -90,15 +91,28 @@
         (:entry-type retro-entry)]
        conj retro-entry)
       (update-in
-       [(:room retro-entry) :by-author (:user retro-entry)]
+       [(:room retro-entry) :by-author (:author retro-entry)]
        conj retro-entry)))
+
+(defn sprint-report-per-room-reducer [report msg]
+  (cond
+    ;; when a sprint starts, we empty the report
+    (instance? msg StartSprint)
+    (assoc report (:room msg) {})
+
+    ;; when a retro msg is sent, we add it to the report
+    (instance? msg RetroEntry)
+    (sprint-report-reducer report msg)
+
+    ;; if we receive a command we don't understand, we just ignore it
+    :else report))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; DB
 
-(sql/defentity retro-dates
+(sql/defentity retro-sprints
   (sql/pk :id)
-  (sql/table :retro_dates))
+  (sql/table :retro_sprints))
 
 (sql/defentity retro-entries
   (sql/pk :id)
@@ -108,76 +122,82 @@
   (let [db-file-path (System/getenv "RETROCRON_DB")]
     (db/h2 {:db "/tmp/retrocron"})))
 
-(defn fetch-retro-begin-date [db room]
-  (first
-   (sql/select retro-dates
-               (sql/database db)
-               (sql/where {:room room})
-               (sql/order :created_at :DESC)
-               (sql/limit 1))))
+;; QUERIES
 
-(defn fetch-retro-entries-from-date [db begin-date]
-  (sql/select retro-entries
+(defn fetch-initial-sprint-begin-date [db]
+  (reduce
+   #(update-in %1 [(:room %2)] (constantly (:max_created_at %2)))
+   {}
+   (sql/select retro-sprints
               (sql/database db)
-              (sql/where (if begin-date
-                           {:created_at [>= begin-date]}
-                           {}))
-              (sql/order :created_at :ASC)))
+              (sql/modifier "DISTINCT")
+              (sql/fields :room)
+              (sql/aggregate (max :created_at) :max_created_at)
+              (sql/group :room))))
 
-(defn store-retro-entry [db {:keys [room user entry-type msg created-at]}]
+(defn fetch-retro-entries-from-date [db room begin-date]
+  (map
+   #(-> %
+        (assoc :created-at (:created_at %))
+        (assoc :entry-type (:entry_type_name %)))
+   (sql/select retro-entries
+               (sql/database db)
+               (sql/where {:room room
+                           :created_at [>= begin-date]})
+               (sql/order :created_at :ASC))))
+
+(defn fetch-initial-sprint-report [db sprint-dates-per-room]
+  (apply
+   merge
+   (for [[room begin-date] sprint-dates-per-room]
+     (reduce
+      sprint-report-reducer
+      {}
+      (fetch-retro-entries-from-date db room begin-date)))))
+
+;; COMMANDS
+
+(defn store-new-sprint
+  [db ^StartSprint {:keys [room author created-at]}]
+  (sql/insert retro-sprints
+              (sql/database db)
+              (sql/values {:room   room
+                           :author author
+                           :created_at created-at})))
+
+(defn store-retro-entry
+  [db ^RetroEntry {:keys [room author entry-type msg created-at]}]
   (sql/insert retro-entries
               (sql/database db)
               (sql/values {:room            room
-                           :user            user
-                           :entry_type_name entry-type
+                           :author          author
+                           :entry_type_name (name entry-type)
                            :msg             msg
                            :created_at      created-at})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; UTIL OBSERVABLES
 
-(def fetch-retro-begin-date-observable
-  (to-observable fetch-retro-begin-date))
+(defn mk-fetch-initial-sprint-dates-observable [& args]
+  (.publish
+   (apply (to-observable fetch-initial-sprint-begin-date) args)))
 
-(def fetch-retro-entries-from-date-observable
-  (to-observable fetch-retro-entries-from-date))
-
-(defn calculate-retro-report-state-observable
-  [db begin-date]
-  (rx/reduce retro-report-reducer
-             {}
-             (rxu/flatten
-              (fetch-retro-entries-from-date-observable
-                 db
-                 begin-date))))
+(def fetch-initial-sprint-report-observable
+  (to-observable fetch-initial-sprint-report))
 
 (defn mk-report-state-observable
-  [report-state0 retro-entries-observable]
-  (rx/reductions retro-report-reducer
-                 report-state0
-                 retro-entries-observable))
+  [sprint-report retro-entry-cmd-observable]
+  (rxu/scan sprint-report-reducer
+            sprint-report
+            retro-entry-cmd-observable))
 
-(defn retro-reports-observable
-  [db begin-date-observable retro-entries-observable]
-  (do-observable
-   begin-date    <- begin-date-observable
-   report-state0 <- (calculate-retro-report-state-observable
-                     db
-                     begin-date)
-   ;; create a new report-state stream reducing the report-state0
-   ;; returned by either the db or from a`set-begin-date` command
-   ;; delivered on the chat
-   (rx/return
-    (mk-report-state-observable report-state0
-                                retro-entries-observable))))
-
-(defn render-retro-report [room-id report-state]
+(defn render-retro-report [room-id sprint-report-per-room-var]
   (str
    "/code\n"
    (str/join
     "\n"
     (doall
-     (for [[type-name entries] (get-in report-state [room-id :by-entry-type])]
+     (for [[type-name entries] (get-in sprint-report-per-room-var [room-id :by-entry-type])]
        (str "# " (name type-name) "\n"
             (str/join
              "\n"
@@ -186,83 +206,132 @@
                 (str "  * "
                      (:msg entry)
                      " ("
-                     (:user entry)
+                     (:author entry)
                      ")"))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HIPCHAT INTEGRATION
 
-(defn merge-timestamp-and-chat-msg [parser [timestamp chat-msg]]
-  (let [result (parse-once (parser (assoc chat-msg :timestamp timestamp)) (:payload chat-msg))]
-    (if (done? result)
-      [(:result result)]
-      [])))
+(defn parse-filter
+  ([parse-fn source]
+   (parse-filter parse-fn (constantly nil) source))
+  ([parse-fn on-error source]
+   (let [filter-parse-result
+         (fn [entry]
+           (let [result (parse-fn entry)]
+             (if (zetta/done? result)
+               [(:result result)]
+               ;; else
+               (do
+                 (on-error result)
+                 []))))]
+     (rxu/mapcat-seq filter-parse-result source))))
 
-(defn timestamped-parse [parser event-bus]
-  (->> event-bus
-       timestamp
-       (mapcat-seq #(merge-timestamp-and-chat-msg parser %))))
 
-(defn init-retro [subscribe event-bus]
-  (let [report-state
-        (atom nil)
+(defn mk-sprint-dates-per-room-observable
+  "Reduces StartSprint commands into the sprint-dates-per-room Map"
+  [fetch-initial-sprint-dates-observable
+   start-sprint-cmd-observable]
+  (do-observable
+   init-sprint-dates-per-room <- fetch-initial-sprint-dates-observable
+   (rxu/scan #(assoc %1 (:room %2) (:created-at %2))
+             init-sprint-dates-per-room
+             start-sprint-cmd-observable)))
 
-        ;; db
-        ;; (setup-db)
+(defn mk-sprint-report-per-room-observable
+  [db
+   sprint-dates-per-room-observable
+   start-sprint-and-entries-cmd-observable]
 
-        ;; chat-message to set-begin-date
-        ;; set-begin-date-cmd-observable
-        ;; (timestamped-parse set-begin-date-parser
-        ;;                    event-bus)
+  (do-observable
+   sprint-dates-per-room  <- (rx/first sprint-dates-per-room-observable)
+   init-sprint-report-per-room <- (fetch-initial-sprint-report-observable db
+                                                                          sprint-dates-per-room)
+   (rxu/scan sprint-report-per-room-reducer
+             init-sprint-report-per-room
+             start-sprint-and-entries-cmd-observable)))
 
-        print-retro-cmd-observable
-        (timestamped-parse print-retro-report-parser
-                           event-bus)
+(defn init-retro [{:keys [subscribe event-bus]}]
+  (let [sprint-dates-per-room-var
+        (atom {})
 
-        ;; chat-message to retro-entry
-        retro-entries-observable
-        (timestamped-parse retro-entry-parser
-                           event-bus)
+        sprint-report-per-room-var
+        (atom {})
 
-        ;; begin-date-observable
-        ;; set-begin-date-cmd-observable
+        db
+        (setup-db)
 
-        ;; reports-observable
-        ;; (Observable/switchOnNext
-        ;;  (retro-reports-observable db
-        ;;                            begin-date-observable
-        ;;                            retro-entries-observable))
+        ;; db interaction observables
 
-        reports-observable
-        (mk-report-state-observable {}
-                                    retro-entries-observable)
+        fetch-initial-sprint-dates-observable
+        (mk-fetch-initial-sprint-dates-observable db)
+
+        ;; chat channel observables
+
+        start-sprint-cmd-observable
+        (parse-filter #(zetta/parse-once (start-sprint-cmd-parser %)
+                                         (:payload %))
+                      event-bus)
+
+        print-retro-report-cmd-observable
+        (parse-filter #(zetta/parse-once (print-retro-report-cmd-parser %)
+                                         (:payload %))
+                      event-bus)
+
+        retro-entry-cmd-observable
+        (parse-filter #(zetta/parse-once (retro-entry-cmd-parser %)
+                                         (:payload %))
+                      event-bus)
+
+        ;; composition of observables from both db and chat channel
+
+        sprint-dates-per-room-observable
+        (mk-sprint-dates-per-room-observable fetch-initial-sprint-dates-observable
+                                             start-sprint-cmd-observable)
+
+        sprint-report-per-room-observable
+        (mk-sprint-report-per-room-observable
+         db
+         sprint-dates-per-room-observable
+         (rx/merge start-sprint-cmd-observable
+                   retro-entry-cmd-observable))
+
         ]
 
-    (subscribe "event bus"
+    (subscribe "event bus (debug)"
                event-bus
-               #(println "event-bus =>" %))
+               #(println "event-bus =>" %)
+               #(.printStackTrace %))
 
-    #_(subscribe "set-begin-date commands"
-                 set-begin-date-cmd-observable
-                 #(println "set-begin-state =>" %))
-
-    #_(subscribe "store-retro entries"
-                 retro-entries-observable
-                 #(do
-                    (println "retro-entry =>" %)
-                    (store-retro-entry db %)))
-
-    (subscribe "print-retro commands"
-               print-retro-cmd-observable
-               (fn send-retro-report [{:keys [room send-chat-msg]}]
-                 (send-chat-msg
-                  (render-retro-report room @report-state))))
-
-    (subscribe "retro-report reducer"
-               reports-observable
+    (subscribe "store-retro entries"
+               retro-entry-cmd-observable
                #(do
-                  (println "report-state =>" %)
-                  (reset! report-state %)))))
+                  (println "storing entry =>" %)
+                  (store-retro-entry db %))
+               #(.printStackTrace %))
+
+    (subscribe "print-retro command handling"
+               print-retro-report-cmd-observable
+               (fn send-retro-report [{:keys [room send-chat-message]}]
+                 (send-chat-message
+                  (render-retro-report room @sprint-report-per-room-var)))
+               #(.printStackTrace %))
+
+    (subscribe "sprint-dates-per-room"
+               sprint-dates-per-room-observable
+               #(do
+                  (println "sprint-dates-per-room" %)
+                  (reset! sprint-dates-per-room-var %))
+               #(.printStackTrace %))
+
+    (subscribe "sprint-report-per-room"
+               sprint-report-per-room-observable
+               #(do
+                  (println "sprint-report-per-room" %)
+                  (reset! sprint-report-per-room-var %))
+               #(.printStackTrace %))
+
+    (.connect fetch-initial-sprint-dates-observable)))
 
 (plugin/register-plugin
  {:id    "retro"
@@ -270,37 +339,45 @@
   :init init-retro})
 
 (defn test-a []
-  (let [event-bus  (rx.subjects.PublishSubject/create)
+  (let [event-bus    (rx.subjects.PublishSubject/create)
+        current-time (System/currentTimeMillis)
         disposable (init-retro
-                    (fn [desc & args]
-                      (println desc)
-                      (apply rx/subscribe args))
-                    event-bus)]
+                    {:subscribe (fn [desc & args]
+                                  #_(println desc)
+                                  (apply rx/subscribe args))
+                     :rooms ["App Team" "Cobras"]
+                     :event-bus event-bus})]
 
-    (rx/on-next event-bus
-                {:user "Roman"
-                 :room-id "App Team"
-                 :payload "#retro "})
 
-    (rx/on-next event-bus
-                {:user "Chris"
-                :room-id "App Team"
-                :payload "#retro #idea use Haskell on a project"})
+    ;; (rx/on-next event-bus
+    ;;             {:user "Chris"
+    ;;              :room-id "App Team"
+    ;;              :timestamp current-time
+    ;;              :payload "#retro #idea use Haskell on a project"})
 
-    (rx/on-next event-bus
-                {:user "Brian"
-                 :room-id "App Team"
-                 :payload  "#retro #plus using moar clojure"})
+    ;; (rx/on-next event-bus
+    ;;             {:user "Brian"
+    ;;              :room-id "App Team"
+    ;;              :timestamp (+ 5000 current-time)
+    ;;              :payload  "#retro #plus using moar clojure"})
 
-    (rx/on-next event-bus
-                {:user "James"
-                 :room-id "App Team"
-                 :payload  "#retro #idea bring donuts every morning"})
+    ;; (rx/on-next event-bus
+    ;;             {:user "James"
+    ;;              :room-id "App Team"
+    ;;              :timestamp (+ 60000 current-time)
+    ;;              :payload  "#retro #idea bring donuts every morning"})
 
-    (rx/on-next event-bus
-                {:user "Roman"
-                 :room-id "App Team"
-                 :payload "#retro print-report"
-                 :send-chat-msg #(println %)})
+    ;; (rx/on-next event-bus
+    ;;             {:user "Roman"
+    ;;              :room-id "App Team"
+    ;;              :payload "#retro print-report"
+    ;;              :timestamp (+ 120000 current-time)
+    ;;              :send-chat-message #(println %)})
+
+    ;; (rx/on-next event-bus
+    ;;             {:user "Tavis"
+    ;;              :room-id "Cobras"
+    ;;              :payload "#retro #idea other message"
+    ;;              :timestamp current-time})
 
     [disposable event-bus]))
