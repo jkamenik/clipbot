@@ -3,7 +3,9 @@
   (:require
    [monads.core :as m]
    [monads.types :as types]
-   [rx.lang.clojure.core :as rx])
+   [rx.lang.clojure.core :as rx]
+   [zetta.core :as zetta]
+   )
   (:import
    [rx Observable]))
 
@@ -55,3 +57,17 @@
   (rx/map (fn -timestamp-map [v]
             [(System/currentTimeMillis) v])
           source))
+
+;; emit first element on subscription
+(defn scan [f init-val source]
+  (let [val-ref (atom init-val)]
+    (rx/observable*
+     (fn -scan [observer]
+       (when-not (rx/unsubscribed? observer)
+         (rx/on-next observer init-val))
+       (rx/subscribe source
+                     (fn -scan-on-next [v]
+                       (swap! val-ref #(f % v))
+                       (rx/on-next observer @val-ref))
+                     #(rx/on-error observer %)
+                     #(rx/on-completed observer))))))
