@@ -2,6 +2,7 @@
   (:require
    [disposables.core :refer [merge-disposables new-disposable*]]
    [rx.lang.clojure.core :as rx]
+   [unbot.util.rx :as rxu]
    [unbot.types :refer :all])
   (:import
    [rx.subscriptions CompositeSubscription]))
@@ -28,16 +29,18 @@
 ;; Creates the bot disposable, by calling the init function
 ;; with the subscribe function and the observable you would
 ;; like to subscribe to.
-(defn- create-subscription-disposable [subject plugins]
+(defn- create-subscription-disposable [subject rooms plugins]
   (let [bot-subscription (atom [])]
     (doseq [{:keys [regex id init]} plugins
             :let [id-kw (keyword id)
                   observable (->> subject
+                                  (rx/map (fn [[timestamp msg]] (assoc msg :timestamp timestamp)))
+                                  urx/timestamp
                                   (rx/filter (message-for-plugin? regex id-kw)))]]
       (when init
-        (init (plugin-subscribe bot-subscription id)
-              observable)))
-
+        (init {:rooms rooms
+               :subscribe (plugin-subscribe bot-subscription id)
+               :event-bus observable})))
     (merge-disposables @bot-subscription)))
 
 ;;
@@ -55,8 +58,10 @@
 (defn new-bot [{:keys [id plugins] :as bot-config}
               subject
               available-plugins]
-  (let [plugin-list (mapv #(get available-plugins %)
+  (let [room-list   (mapv :id (get-in bot-config [:connection :conf :rooms]))
+        plugin-list (mapv #(get available-plugins %)
                           plugins)]
 
     (create-subscription-disposable subject
+                                    room-list
                                     plugin-list)))
