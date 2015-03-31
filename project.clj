@@ -31,6 +31,7 @@
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]
                  [net.java.dev.rome/rome "1.0.0"]
+                 [org.clojure/tools.nrepl "0.2.10"]
 
                  [clj-http "0.9.2"],
                  [cheshire "5.2.0"],

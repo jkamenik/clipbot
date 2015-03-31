@@ -2,10 +2,12 @@
   (:gen-class)
   (:require
    [unbot.chat :as chat]
-   [unbot.bot :as bot]
    [unbot.plugin :as plugin]
+   [unbot.nrepl :as nrepl]
    [clojure.java.io :as io]
-   [cheshire.core :as json])
+   [cheshire.core :as json]
+   [disposables.core :refer [merge-disposables]]
+   )
   (:import
    [rx.subjects PublishSubject]))
 
@@ -23,8 +25,12 @@
   ([conf-file event-bus]
    (let [conf (read-conf conf-file)
          {bot-configs :bots} conf
-         plugins (plugin/load-plugins (mapcat :plugins bot-configs))]
-     (chat/init-chat bot-configs plugins event-bus))))
+         plugins (plugin/load-plugins (mapcat :plugins bot-configs))
+
+
+         chat-disposable (chat/init-chat bot-configs plugins event-bus)
+         nrepl-disposable (nrepl/start-nrepl)]
+     (merge-disposables [chat-disposable nrepl-disposable]))))
 
 (defn -main [& [conf-file & args]]
   (start conf-file)
