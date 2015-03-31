@@ -19,7 +19,7 @@
                  [io.reactivex/rxclojure "1.0.0"]
                  [org.clojure/core.match "0.2.2"]
                  [org.van-clj/disposables "0.2.0"]
-                 [org.van-clj/zetta-parser "0.1.0-SNAPSHOT"]
+                 [org.van-clj/zetta-parser "0.1.0"]
 
                  ;; retro plugin
                  [korma "0.4.0"]
