@@ -6,9 +6,12 @@
    [unbot.plugin :as plugin]
    [clojure.java.io :as io]
    [cheshire.core :as json])
-  (:import [rx.subjects PublishSubject]))
+  (:import
+   [rx.subjects PublishSubject]))
 
-(def resource-conf (-> "config.json" io/resource))
+(def resource-conf
+  (io/resource (or (System/getenv "UNBOT_CONFIG_FILE")
+                   "config.json")))
 
 (defn read-conf [file]
   (json/parse-string (slurp (or file resource-conf)) true))
