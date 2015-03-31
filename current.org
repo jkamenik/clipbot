@@ -44,12 +44,41 @@ CLOCK: [2015-03-03 Tue 13:56]--[2015-03-03 Tue 16:25] =>  2:29
  - [X] Move records to types ns
  - [X] Move HipChat logic to its own module
 
-* Retro Plugin
+
+* STARTED Kaizen to unbot project
+:CLOCK:
+CLOCK: [2015-03-23 Mon 16:24]--[2015-03-23 Mon 17:22] =>  0:58
+:END:
+:LOGBOOK:
+- State "STARTED"    from ""           [2015-03-23 Mon 16:24]
+:END:
+:PROPERTIES:
+:ID:       0a9c63d3-4b38-404a-b849-63d6c67bd098
+:ADDED:    [2015-03-23 Mon 16:23]
+:Effort:   1:00
+:END:
+
+  - [X] Add timestamp to messages on the chat ns level
+  - [X] Add a parse rx combinator that accepts a zetta-parser and an error callback
+
+
+
+* STARTED Retro Plugin
+:CLOCK:
+CLOCK: [2015-03-30 Mon 17:09]--[2015-03-30 Mon 17:39] =>  0:30
+CLOCK: [2015-03-24 Tue 14:10]--[2015-03-24 Tue 16:44] =>  2:34
+CLOCK: [2015-03-24 Tue 11:18]--[2015-03-24 Tue 12:40] =>  1:22
+CLOCK: [2015-03-23 Mon 17:27]--[2015-03-23 Mon 17:58] =>  0:31
+:END:
+:LOGBOOK:
+- State "STARTED"    from ""           [2015-03-23 Mon 17:27]
+:END:
 :PROPERTIES:
 :ID:       f13a7648-b883-4ab5-86b7-ffd10fe16626
 :ADDED:    [2015-03-23 Mon 15:49]
+:Effort:   5:00
 :END:
-
+- [ ] Organize plugins to know in which room they are running
 - [ ] Integrate with JIRA to get sprint info
 
   - API Call to get team views:
@@ -60,3 +89,17 @@ CLOCK: [2015-03-03 Tue 13:56]--[2015-03-03 Tue 16:25] =>  2:29
 
   - API Call to get sprint info
     https://jira.unbounce.com/rest/greenhopper/1.0/rapid/charts/scopechangeburndownchart.json?rapidViewId=<rapid_view_id>&sprintId=<sprint_id>
+
+** STARTED Create a Dockerfile
+:CLOCK:
+CLOCK: [2015-03-27 Fri 13:58]--[2015-03-27 Fri 13:59] =>  0:01
+CLOCK: [2015-03-27 Fri 12:26]--[2015-03-27 Fri 12:30] =>  0:04
+:END:
+:LOGBOOK:
+- State "STARTED"    from ""           [2015-03-27 Fri 12:26]
+:END:
+:PROPERTIES:
+:ID:       abdd6cb5-e39d-4ca6-be33-b95ed1e466e6
+:ADDED:    [2015-03-27 Fri 12:26]
+:Effort:   1:00
+:END:
