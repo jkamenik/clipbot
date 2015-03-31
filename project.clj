@@ -8,7 +8,8 @@
   :repl-options {:init-ns dev}
   :plugins [[ragtime/ragtime.lein "0.3.8"]]
   :ragtime {:migrations ragtime.sql.files/migrations
-            :database "jdbc:h2:file:/tmp/retrocron"}
+            :database (str  "jdbc:h2:file:" (or (System/getenv "RETROCRON_DB")
+                                                "resources/retrocron"))}
   :dependencies [[org.clojure/clojure "1.6.0"]
 
                  ;; TODO: move dependencies to a different
