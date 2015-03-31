@@ -1,0 +1,18 @@
+{
+    "server-port": 9000,
+    "bots": [{
+        "id": "unbot",
+        "connection": {
+            "type": "hipchat",
+            "conf": {
+                "user": "<hipchat-username>",
+                "pass": "<hipchat-user-password>",
+                "rooms": [{
+                    "id": "<xmpp_channel_id>",
+                    "nick": "Un Bot"
+                }]
+            }
+        },
+        "plugins": ["retro"]
+    }]
+}
