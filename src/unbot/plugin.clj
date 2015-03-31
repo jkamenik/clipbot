@@ -4,16 +4,15 @@
 
 (defonce plugins (atom {}))
 
-(defn read-plugin-files []
-  (map slurp (->> "plugins/unbot/plugins"
-                  io/resource
-                  io/file
-                  file-seq
-                  (filter #(not (.isDirectory %))))))
+(defn read-plugin-file [plugin-name]
+  (slurp (io/resource (str "plugins/unbot/plugins/" plugin-name ".clj"))))
 
-(defn load-plugins []
-  (doseq [plugin (read-plugin-files)]
-    (load-string plugin))
+(defn load-plugins [plugin-names]
+  (doseq [plugin-name plugin-names
+          :let [plugin-contents (read-plugin-file plugin-name)]]
+    (load-string plugin-contents))
+  ;; each load-string should call register-plugin, which is going to update the
+  ;; @plugins atom
   @plugins)
 
 (defn register-plugin [plugin]

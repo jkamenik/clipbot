@@ -17,11 +17,11 @@
   ([] (start nil))
   ([conf-file]
    (start conf-file (PublishSubject/create)))
-  ([conf-file subject]
+  ([conf-file event-bus]
    (let [conf (read-conf conf-file)
          {bot-configs :bots} conf
-         plugins (plugin/load-plugins)]
-     (chat/init-chat bot-configs plugins subject))))
+         plugins (plugin/load-plugins (mapcat :plugins bot-configs))]
+     (chat/init-chat bot-configs plugins event-bus))))
 
 (defn -main [& [conf-file & args]]
   (start conf-file))

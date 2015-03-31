@@ -21,9 +21,10 @@
     (and (= (:category msg)) category
          (= (:type msg) type))))
 
-(defn chat-message [payload]
+(defn chat-message [room-id payload]
   {:category :chat
    :type :send-message
+   :room-id room-id
    :payload payload})
 
 ;; Check if an outbound unbot message has valid format
@@ -34,9 +35,9 @@
 
 ;; Sends a chat message to HipChat
 ;; NOTE: payload is *always* transformed to string
-(defn send-chat-message [subject payload]
+(defn send-chat-message [subject room-id payload]
   (.onNext subject
-           (chat-message (str payload))))
+           (chat-message room-id (str payload))))
 
 (defn send-raw-message [subject msg]
   {:pre [(valid-raw-message? msg)]}

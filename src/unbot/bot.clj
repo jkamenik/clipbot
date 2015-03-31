@@ -19,28 +19,31 @@
 
 ;; Inner subscribe function that is used in the init function
 ;; of every plugin
-(defn- plugin-subscribe [bot-subscription plugin-id]
+(defn- plugin-subscribe [bot-subscription room-name plugin-id]
   (fn -plugin-subscribe [desc & args]
     (let [subscription (apply rx/subscribe args)]
       (swap! bot-subscription conj
-             (new-disposable* (str "Plugin " plugin-id " (" desc ")")
+             (new-disposable* (str "Plugin " plugin-id " on room " room-name "(" desc ")")
                               #(.unsubscribe subscription))))))
 
 ;; Creates the bot disposable, by calling the init function
 ;; with the subscribe function and the observable you would
 ;; like to subscribe to.
-(defn- create-subscription-disposable [subject rooms plugins]
+(defn- create-subscription-disposable [event-bus0 rooms plugins]
   (let [bot-subscription (atom [])]
     (doseq [{:keys [regex id init]} plugins
             :let [id-kw (keyword id)
-                  observable (->> subject
-                                  (rx/map (fn [[timestamp msg]] (assoc msg :timestamp timestamp)))
-                                  urx/timestamp
-                                  (rx/filter (message-for-plugin? regex id-kw)))]]
+                  event-bus (->> event-bus0
+                                 rxu/timestamp
+                                 (rx/map
+                                  (fn -timestamp-map [[timestamp msg]]
+                                    (assoc msg :timestamp timestamp)))
+                                 (rx/filter (message-for-plugin? regex id-kw)))]]
       (when init
-        (init {:rooms rooms
-               :subscribe (plugin-subscribe bot-subscription id)
-               :event-bus observable})))
+        (doseq [room rooms]
+          (init {:room room
+                 :subscribe (plugin-subscribe bot-subscription room id)
+                 :event-bus (rx/filter #(= (:room-id %) room) event-bus)}))))
     (merge-disposables @bot-subscription)))
 
 ;;
@@ -56,12 +59,12 @@
 ;; PENDING: a logger
 ;;
 (defn new-bot [{:keys [id plugins] :as bot-config}
-              subject
+              event-bus0
               available-plugins]
   (let [room-list   (mapv :id (get-in bot-config [:connection :conf :rooms]))
         plugin-list (mapv #(get available-plugins %)
                           plugins)]
 
-    (create-subscription-disposable subject
+    (create-subscription-disposable event-bus0
                                     room-list
                                     plugin-list)))

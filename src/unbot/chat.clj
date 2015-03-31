@@ -13,17 +13,17 @@
 
 ;; Public
 
-(defn connect [bot-conf subject]
+(defn connect [bot-conf event-bus]
   (let [{:keys [type conf]} (:connection bot-conf)]
     (println "Connecting Bot: " bot-conf)
     (condp = type
-      "hipchat" (connect-hipchat conf subject)
+      "hipchat" (connect-hipchat conf event-bus)
       :else (throw (Exception. "Unknown chat type")))))
 
-(defn init-chat [bot-configs plugins subject]
-  (let [bot-disposables        (mapv #(bot/new-bot % subject plugins) bot-configs)
+(defn init-chat [bot-configs plugins event-bus]
+  (let [bot-disposables        (mapv #(bot/new-bot % event-bus plugins) bot-configs)
         ;; ^ Setups all different subscriptions to Rx streams
-        connection-disposables (mapv #(connect % subject) bot-configs)
+        connection-disposables (mapv #(connect % event-bus) bot-configs)
         ;; ^ Setups all connections to Chat resources (socket, etc.)
         ]
     (merge-disposables
