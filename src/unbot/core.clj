@@ -27,4 +27,7 @@
      (chat/init-chat bot-configs plugins event-bus))))
 
 (defn -main [& [conf-file & args]]
-  (start conf-file))
+  (start conf-file)
+  (loop []
+      (Thread/sleep 50000)
+    (recur)))
