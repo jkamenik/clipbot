@@ -53,22 +53,15 @@
        (*> p/skip-spaces (p/string "#retro")
            p/skip-spaces (p/char \#)
            p/skip-spaces retro-entry-type-parser)
-       (*> p/skip-spaces ps/take-rest)))
+       (<$> str/join (*> p/skip-spaces ps/take-rest))))
 
 ;;;;;;;;;;;;;;;;;;;;
 
-;; (def date-parser
-;;   (zetta/do-parser
-;;    text <- (ps/take-till #(Character/isWhitespace #^java.lang.Character %))
-;;    (if-let [parsed-date (.parse (SimpleDateFormat. "yyyy/MM/DD")
-;;                                 text (ParsePosition. 0))]
-;;      (zetta/always parsed-date)
-;;      (zetta/fail-parser "Expected date"))))
-
-(defn start-sprint-cmd-parser [{:keys [room-id author timestamp]}]
-  (<$> #(StartSprint. room-id author (java.util.Date. timestamp))
-       (*> p/skip-spaces (p/string "#retro")
-           p/skip-spaces (p/string "start-sprint"))))
+(defn start-sprint-cmd-parser [{:keys [room-id user timestamp]}]
+  (*> p/skip-spaces (p/string "#retro")
+      p/skip-spaces (p/string "start-sprint")
+      (zetta/always (StartSprint.
+                     room-id user (java.util.Date. timestamp)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;
@@ -97,11 +90,11 @@
 (defn sprint-report-per-room-reducer [report msg]
   (cond
     ;; when a sprint starts, we empty the report
-    (instance? msg StartSprint)
+    (instance? StartSprint msg)
     (assoc report (:room msg) {})
 
     ;; when a retro msg is sent, we add it to the report
-    (instance? msg RetroEntry)
+    (instance? RetroEntry msg)
     (sprint-report-reducer report msg)
 
     ;; if we receive a command we don't understand, we just ignore it
@@ -119,8 +112,9 @@
   (sql/table :retro_entries))
 
 (defn setup-db []
-  (let [db-file-path (System/getenv "RETROCRON_DB")]
-    (db/h2 {:db "/tmp/retrocron"})))
+  (let [db-file-path (or (System/getenv "RETROCRON_DB")
+                         "resources/retrocron")]
+    (db/h2 {:db db-file-path})))
 
 ;; QUERIES
 
@@ -192,22 +186,25 @@
             retro-entry-cmd-observable))
 
 (defn render-retro-report [room-id sprint-report-per-room-var]
-  (str
-   "/code\n"
-   (str/join
-    "\n"
-    (doall
-     (for [[type-name entries] (get-in sprint-report-per-room-var [room-id :by-entry-type])]
-       (str "# " (name type-name) "\n"
-            (str/join
-             "\n"
-             (doall
-              (for [entry entries]
-                (str "  * "
-                     (:msg entry)
-                     " ("
-                     (:author entry)
-                     ")"))))))))))
+  (if-let [report (get-in sprint-report-per-room-var [room-id :by-entry-type])]
+    (str
+     "/quote\n"
+     (str/join
+      "\n"
+      (doall
+       (for [[type-name entries] report]
+         (str "# " (name type-name) "\n"
+              (str/join
+               "\n"
+               (doall
+                (for [entry entries]
+                  (str "  * "
+                       (:msg entry)
+                       " ("
+                       (:author entry)
+                       ")")))))))))
+    ;; else
+    (str "/quote No entries to report for this sprint")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HIPCHAT INTEGRATION
@@ -303,7 +300,14 @@
                #(println "event-bus =>" %)
                #(.printStackTrace %))
 
-    (subscribe "store-retro entries"
+    (subscribe "store sprint-start"
+               start-sprint-cmd-observable
+               #(do
+                  (println "storing sprint =>" %)
+                  (store-new-sprint db %))
+               #(.printStackTrace %))
+
+    (subscribe "store retro-entries"
                retro-entry-cmd-observable
                #(do
                   (println "storing entry =>" %)
@@ -348,12 +352,24 @@
                      :rooms ["App Team" "Cobras"]
                      :event-bus event-bus})]
 
+    #_(rx/on-next event-bus
+                {:user "Chris Cummer"
+                 :room-id "7541_hacknight"
+                 :timestamp current-time
+                 :payload "#retro start-sprint"})
 
-    ;; (rx/on-next event-bus
-    ;;             {:user "Chris"
-    ;;              :room-id "App Team"
-    ;;              :timestamp current-time
-    ;;              :payload "#retro #idea use Haskell on a project"})
+    #_(rx/on-next event-bus
+                {:user "Chris Cummer"
+                 :room-id "7541_hacknight"
+                 :timestamp (+ current-time 5000)
+                 :payload "#retro #idea use Haskell on a project"})
+
+    (rx/on-next event-bus
+                {:user "Roman Gonzalez"
+                 :room-id "7541_hacknight"
+                 :payload "#retro print-report"
+                 :timestamp (+ current-time 120000)
+                 :send-chat-message #(println %)})
 
     ;; (rx/on-next event-bus
     ;;             {:user "Brian"
@@ -366,13 +382,6 @@
     ;;              :room-id "App Team"
     ;;              :timestamp (+ 60000 current-time)
     ;;              :payload  "#retro #idea bring donuts every morning"})
-
-    ;; (rx/on-next event-bus
-    ;;             {:user "Roman"
-    ;;              :room-id "App Team"
-    ;;              :payload "#retro print-report"
-    ;;              :timestamp (+ 120000 current-time)
-    ;;              :send-chat-message #(println %)})
 
     ;; (rx/on-next event-bus
     ;;             {:user "Tavis"
