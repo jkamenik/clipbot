@@ -7,7 +7,7 @@
   (:import
    [org.jivesoftware.smack ConnectionConfiguration XMPPConnection XMPPException PacketListener]
    [org.jivesoftware.smack.packet Message Presence Presence$Type]
-   [org.jivesoftware.smackx.muc MultiUserChat]))
+   [org.jivesoftware.smackx.muc MultiUserChat InvitationListener]))
 
 ;; Transform an XMPP Message to a Clojure Map
 (defn- message->map [#^Message m]
@@ -54,16 +54,25 @@
 
 ;; Connects to particular HipChat room, and registers EventBus (subject)
 ;; to receive every message and emits it to intersted listeners
-(defn- join-hipchat-room [conn room subject]
-  (let [{room-id :id
-         :keys [nick]} room
-        muc (MultiUserChat. conn (str room-id "@conf.hipchat.com"))]
+(defn- join-hipchat-room [conn room nick subject]
+  (let [muc (MultiUserChat. conn room)]
 
-    (println "Joining room: " room-id " with nick: " nick)
+    (println "Joining room: " room " with nick: " nick)
     (.join muc nick)
 
-    (merge-disposables [(setup-listen-messages muc subject room-id)
+    (merge-disposables [(setup-listen-messages muc subject room)
                         (setup-send-messages muc subject)])))
+
+(defn- xmpp-invitation-listener [nick subject]
+  (reify InvitationListener
+    (invitationReceived [_ conn room inviter reason password message]
+      (join-hipchat-room conn room nick subject))))
+
+(defn- handle-hipchat-invitations [conn nick subject]
+  (let [listener (xmpp-invitation-listener nick subject)]
+    (MultiUserChat/addInvitationListener conn listener)
+    (new-disposable* "HipChat invitation listener"
+                     #(MultiUserChat/removeInvitationListener conn listener))))
 
 ;; Setups the initial Connection to the HipChat XMPP Server
 (defn- initialize-xmpp-connection [conn user pass]
@@ -75,9 +84,14 @@
   (.sendPacket conn (Presence. Presence$Type/available)))
 
 ;; main: Starts a Chat with HipChat
-(defn connect-hipchat [{:keys [user pass rooms]} subject]
+(defn connect-hipchat [{:keys [user pass rooms nick]} subject]
   (let [conn (XMPPConnection. (ConnectionConfiguration. "chat.hipchat.com" 5222))]
     (initialize-xmpp-connection conn user pass)
     (merge-disposables
      [(new-disposable* "HipChat Connection" #(.disconnect conn))
-      (merge-disposables (mapv #(join-hipchat-room conn % subject) rooms))])))
+      (merge-disposables (mapv #(join-hipchat-room conn
+                                                   (str % "@conf.hipchat.com")
+                                                   nick
+                                                   subject)
+                               rooms))
+      (handle-hipchat-invitations conn nick subject)])))
