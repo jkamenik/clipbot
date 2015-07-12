@@ -1,10 +1,14 @@
 (ns unbot.plugins.retro
   (:require
    [clojure.string :as str]
+   [clojure.java.io :as io]
+   [clojure.edn :as edn]
 
    ;; db management
    [korma.core :as sql]
    [korma.db :as db]
+   [ragtime.jdbc :as ragtime]
+   [ragtime.repl :refer [migrate]]
 
    ;; rx magic
    [unbot.util.rx
@@ -24,10 +28,49 @@
    [java.text ParsePosition SimpleDateFormat]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CONFIG LIB CODE
+
+(defn fetch-config-from-env
+  ([config0 config-map]
+   (reduce (fn -fetch-config-from-env [config [varenv-name key-location]]
+             (if-let [value (System/getenv varenv-name)]
+               (update-in config key-location (constantly value))
+               config))
+           config0
+           config-map))
+  ([config-map]
+   (fetch-config-from-env {} config-map)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CONFIG
+
+(def retrobot-config-map
+  {
+   "RETROBOT_DB_USER"     [:db :user]
+   "RETROBOT_DB_PASSWORD" [:db :password]
+   "RETROBOT_DB_NAME"     [:db :name]
+   "RETROBOT_DB_PORT"     [:db :port]
+   "RETROBOT_DB_HOST"     [:db :host]
+   })
+
+(defn retrobot-fetch-config-from-file
+  []
+  (or (some-> "RETROBOT_CONFIG_FILE"
+              System/getenv
+              io/as-file
+              edn/read)
+      {}))
+
+(defn retrobot-fetch-config
+  []
+  (-> (retrobot-fetch-config-from-file)
+      (fetch-config-from-env retrobot-config-map)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TYPES
 
 (def RETRO_ENTRY_TYPES
-  #{:flowers :delta :plus :idea})
+  #{:flowers :delta :plus :idea :action})
 
 (defrecord RetroEntry       [room author created-at entry-type msg])
 (defrecord StartSprint      [room author created-at])
@@ -111,10 +154,27 @@
   (sql/pk :id)
   (sql/table :retro_entries))
 
-(defn setup-db []
-  (let [db-file-path (or (System/getenv "RETROCRON_DB")
-                         "resources/retrocron")]
-    (db/h2 {:db db-file-path})))
+(defn setup-db [{:keys [host name user password]}]
+  (db/defdb retrobot-db
+    (db/mysql {:db name
+               :user user
+               :password password
+               :delimiters "`"
+               :host host})))
+
+;; MIGRATIONS
+
+(defn migrate-db
+  [config]
+  (let [{:keys [name user password host]
+         :or {host "localhost"}} (:db config)
+
+        connection-uri (str "jdbc:mysql://" host "/" name "?user=" user "&password=" password)
+
+        ragtime-config {:database   (ragtime/sql-database {:connection-uri connection-uri})
+                        :migrations (ragtime/load-resources "migrations")}]
+
+    (migrate ragtime-config)))
 
 ;; QUERIES
 
@@ -174,7 +234,8 @@
 
 (defn mk-fetch-initial-sprint-dates-observable [& args]
   (.publish
-   (apply (to-observable fetch-initial-sprint-begin-date) args)))
+   (apply (to-observable fetch-initial-sprint-begin-date)
+          args)))
 
 (def fetch-initial-sprint-report-observable
   (to-observable fetch-initial-sprint-report))
@@ -186,7 +247,8 @@
             retro-entry-cmd-observable))
 
 (defn render-retro-report [room-id sprint-report-per-room-var]
-  (if-let [report (get-in sprint-report-per-room-var [room-id :by-entry-type])]
+  (if-let [report (get-in sprint-report-per-room-var
+                          [room-id :by-entry-type])]
     (str
      "/quote\n"
      (str/join
@@ -211,7 +273,9 @@
 
 (defn parse-filter
   ([parse-fn source]
-   (parse-filter parse-fn (constantly nil) source))
+   (parse-filter parse-fn
+                 (constantly nil)
+                 source))
   ([parse-fn on-error source]
    (let [filter-parse-result
          (fn [entry]
@@ -241,7 +305,7 @@
    start-sprint-and-entries-cmd-observable]
 
   (do-observable
-   sprint-dates-per-room  <- (rx/first sprint-dates-per-room-observable)
+   sprint-dates-per-room       <- (rx/first sprint-dates-per-room-observable)
    init-sprint-report-per-room <- (fetch-initial-sprint-report-observable db
                                                                           sprint-dates-per-room)
    (rxu/scan sprint-report-per-room-reducer
@@ -255,8 +319,11 @@
         sprint-report-per-room-var
         (atom {})
 
+        config
+        (retrobot-fetch-config)
+
         db
-        (setup-db)
+        (setup-db (:db config))
 
         ;; db interaction observables
 
@@ -287,11 +354,10 @@
                                              start-sprint-cmd-observable)
 
         sprint-report-per-room-observable
-        (mk-sprint-report-per-room-observable
-         db
-         sprint-dates-per-room-observable
-         (rx/merge start-sprint-cmd-observable
-                   retro-entry-cmd-observable))
+        (mk-sprint-report-per-room-observable db
+                                              sprint-dates-per-room-observable
+                                              (rx/merge start-sprint-cmd-observable
+                                                        retro-entry-cmd-observable))
 
         ]
 

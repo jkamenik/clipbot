@@ -7,9 +7,6 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :repl-options {:init-ns dev}
   :plugins [[ragtime/ragtime.lein "0.3.8"]]
-  :ragtime {:migrations ragtime.sql.files/migrations
-            :database (str  "jdbc:h2:file:" (or (System/getenv "RETROCRON_DB")
-                                                "resources/retrocron"))}
   :dependencies [[org.clojure/clojure "1.6.0"]
 
                  ;; TODO: move dependencies to a different
@@ -23,10 +20,9 @@
                  [org.van-clj/zetta-parser "0.1.0"]
 
                  ;; retro plugin
-                 [korma "0.4.0"]
-                 [com.h2database/h2 "1.3.170"]
-                 [clj-liquibase "0.5.2"]
-                 [ragtime "0.3.8"]
+                 [korma "0.4.2"]
+                 [mysql/mysql-connector-java "5.1.36"]
+                 [ragtime "0.4.2"]
 
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]
