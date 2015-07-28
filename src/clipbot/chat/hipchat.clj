@@ -2,12 +2,14 @@
   (:require
    [clojure.string :as str]
    [rx.lang.clojure.core :as rx]
-   [disposables.core :refer [new-disposable* merge-disposable to-disposable]]
+   [disposables.core :refer [dispose new-disposable* merge-disposables to-disposable]]
    [clipbot.types :refer :all])
   (:import
    [org.jivesoftware.smack ConnectionConfiguration XMPPConnection XMPPException PacketListener]
    [org.jivesoftware.smack.packet Message Presence Presence$Type]
-   [org.jivesoftware.smackx.muc MultiUserChat]))
+   [org.jivesoftware.smackx.muc MultiUserChat InvitationListener]))
+
+(def ^:private ^:dynamic *join-room-disposables* (atom {}))
 
 ;; Transform an XMPP Message to a Clojure Map
 (defn- message->map [#^Message m]
@@ -54,16 +56,54 @@
 
 ;; Connects to particular HipChat room, and registers EventBus (subject)
 ;; to receive every message and emits it to intersted listeners
-(defn- join-hipchat-room [conn room subject]
-  (let [{room-id :id
-         :keys [nick]} room
-        muc (MultiUserChat. conn (str room-id "@conf.hipchat.com"))]
+(defn- join-hipchat-room [conn room nick subject]
+  (let [muc (MultiUserChat. conn room)]
 
-    (println "Joining room: " room-id " with nick: " nick)
+    (println "Joining room: " room " with nick: " nick)
     (.join muc nick)
 
-    (merge-disposable (setup-listen-messages muc subject room-id)
-                      (setup-send-messages muc subject))))
+    (merge-disposables [(setup-listen-messages muc subject room)
+                        (setup-send-messages muc subject)
+                        (new-disposable* "Leave HipChat room"
+                                         #(.leave muc))])))
+(defn- join-and-register-hipchat-room [conn room-id nick subject]
+  (let [disposable (join-hipchat-room conn room-id nick subject)]
+    (println "Registering room:" room-id)
+    (swap! *join-room-disposables* assoc room-id disposable)
+    disposable))
+
+(defn- leave-message? [mention]
+  (let [pattern (re-pattern (format "(?i)^%s (leave|go away)!*$" mention))]
+   #(re-matches pattern (:payload %))))
+
+(defn- leave-room [room-id]
+  (println "going to leave" room-id)
+  (when-let [disposable (get @*join-room-disposables* room-id)]
+    (println "Leaving room:" room-id)
+    (dispose disposable)
+    (swap! *join-room-disposables* room-id)))
+
+(defn- handle-leave-requests [mention subject]
+  (let [receive-messages-observable (rx/filter (category-type? :chat :receive-message)
+                                               subject)
+        leave-messages-observable (rx/filter (leave-message? mention)
+                                             receive-messages-observable)
+        subscription (rx/subscribe receive-messages-observable
+                                   #(leave-room (:room-id %)))]
+
+    (new-disposable* "HipChat leave message observable"
+                     #(.unsubscribe subscription))))
+
+(defn- xmpp-invitation-listener [nick subject]
+  (reify InvitationListener
+    (invitationReceived [_ conn room inviter reason password message]
+      (join-and-register-hipchat-room conn room nick subject))))
+
+(defn- handle-hipchat-invitations [conn nick subject]
+  (let [listener (xmpp-invitation-listener nick subject)]
+    (MultiUserChat/addInvitationListener conn listener)
+    (new-disposable* "HipChat invitation listener"
+                     #(MultiUserChat/removeInvitationListener conn listener))))
 
 ;; Setups the initial Connection to the HipChat XMPP Server
 (defn- initialize-xmpp-connection [conn user pass]
@@ -75,9 +115,17 @@
   (.sendPacket conn (Presence. Presence$Type/available)))
 
 ;; main: Starts a Chat with HipChat
-(defn connect-hipchat [{:keys [user pass rooms]} subject]
+(defn connect-hipchat [{:keys [user pass rooms nick mention]} subject]
   (let [conn (XMPPConnection. (ConnectionConfiguration. "chat.hipchat.com" 5222))]
     (initialize-xmpp-connection conn user pass)
-    (merge-disposable
-     (new-disposable* "HipChat Connection" #(.disconnect conn))
-     (apply merge-disposable (mapv #(join-hipchat-room conn % subject) rooms)))))
+    (merge-disposables
+     [(new-disposable* "HipChat Connection" #(.disconnect conn))
+      (merge-disposables (mapv #(join-and-register-hipchat-room conn
+                                                   (str % "@conf.hipchat.com")
+                                                   nick
+                                                   subject)
+                               rooms))
+      (handle-hipchat-invitations conn nick subject)
+      (handle-leave-requests mention subject)
+      (new-disposable* "Reset message-listeners"
+                       #(reset! *join-room-disposables* {}))])))

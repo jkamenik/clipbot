@@ -1,7 +1,7 @@
 (ns clipbot.chat
   (:require
    [clojure.string :as str]
-   [disposables.core :refer [merge-disposable]]
+   [disposables.core :refer [merge-disposables]]
    [rx.lang.clojure.core :as rx]
    [rx.lang.clojure.interop :refer [action*]]
    [disposables.core :refer [IDisposable]]
@@ -26,5 +26,6 @@
         connection-disposables (mapv #(connect % subject) bot-configs)
         ;; ^ Setups all connections to Chat resources (socket, etc.)
         ]
-    (apply merge-disposable
-           (concat connection-disposables bot-disposables))))
+    (merge-disposables
+     (concat connection-disposables
+             bot-disposables))))

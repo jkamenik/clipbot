@@ -1,6 +1,6 @@
 (ns clipbot.bot
   (:require
-   [disposables.core :refer [merge-disposable new-disposable*]]
+   [disposables.core :refer [merge-disposables new-disposable*]]
    [rx.lang.clojure.core :as rx]
    [clipbot.types :refer :all])
   (:import
@@ -38,7 +38,7 @@
         (init (plugin-subscribe bot-subscription id)
               observable)))
 
-    (apply merge-disposable @bot-subscription)))
+    (merge-disposables @bot-subscription)))
 
 ;;
 ;; Creates a new bot

@@ -22,7 +22,8 @@
                              :regex plugin-regex
                              :init
                              (fn test-plugin-init [subscribe observable]
-                               (subscribe observable
+                               (subscribe "message accumulator"
+                                          observable
                                           #(swap! st-atom conj %)
                                           #(.printStackTrace %)))
                              }})]

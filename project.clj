@@ -11,10 +11,11 @@
 
                  ;; TODO: move dependencies to a different
                  ;; unbounce dependencies
-                 [org.clojure/core.match "0.2.1"]
+                 [org.clojure/core.match "0.2.2"]
                  [io.reactivex/rxclojure "1.0.0"]
                  [com.rallydev/clj-jenkins "0.1.5" :exclusions [org.clojure/clojure]]
-                 [org.van-clj/disposables "0.1.0"]
+                 [net.clojure/monads "1.0.0"]
+                 [org.van-clj/disposables "0.2.0"]
 
                  [jivesoftware/smack "3.1.0"]
                  [jivesoftware/smackx "3.1.0"]
