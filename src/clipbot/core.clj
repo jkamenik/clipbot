@@ -8,7 +8,12 @@
    [cheshire.core :as json])
   (:import [rx.subjects PublishSubject]))
 
-(def resource-conf (-> "config.json" io/resource))
+(def resource-conf (let [local (io/file (System/getProperty "user.dir") ".clipbot.json")
+                         global (io/file "etc" "clipbot.json")
+                         resource (-> "config.json" io/resource)]
+                     (case (.exists local) local
+                           (.exists global) global
+                           (.exists resource) resource)))
 
 (defn read-conf [file]
   (json/parse-string (slurp (or file resource-conf)) true))
